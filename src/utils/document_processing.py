@@ -24,6 +24,18 @@ def process_text_file(file_path: str) -> dict:
     with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
         content = f.read()
 
+    # Strip embedded base64 image data URIs before chunking.
+    # Docling sometimes inlines full image bytes as data:image/...;base64,<blob>
+    # which can be hundreds of KB per image. Ollama's /api/embed returns 400 when
+    # a single input is that large. Replace with a short placeholder so the image
+    # alt-text / caption is preserved without the payload.
+    import re
+    content = re.sub(
+        r'!\[([^\]]*)\]\(data:image/[^;]+;base64,[^)]+\)',
+        r'![image: \1](embedded-image)',
+        content,
+    )
+
     # Compute hash
     file_hash = hash_id(file_path)
     filename = os.path.basename(file_path)
