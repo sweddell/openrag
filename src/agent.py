@@ -535,6 +535,49 @@ async def async_chat_stream(
         )
 
 
+async def _langflow_native_response(
+    langflow_http_client,
+    flow_id: str,
+    prompt: str,
+    extra_headers: dict = None,
+):
+    """
+    Call Langflow's native /api/v1/run/{flow_id} endpoint directly.
+    Returns (response_text, response_id).
+    """
+    import uuid
+    from config.settings import clients as _app_clients
+
+    payload = {
+        "input_value": prompt,
+        "input_type": "chat",
+        "output_type": "chat",
+    }
+    headers = {}
+    if extra_headers:
+        headers.update(extra_headers)
+
+    response = await _app_clients.langflow_request(
+        "POST", f"/api/v1/run/{flow_id}", json=payload, headers=headers
+    )
+    response.raise_for_status()
+    data = response.json()
+
+    # Extract text from Langflow run response structure
+    try:
+        outputs = data.get("outputs", [])
+        text = (
+            outputs[0]["outputs"][0]["results"]["message"]["text"]
+            if outputs
+            else ""
+        )
+    except (KeyError, IndexError, TypeError):
+        text = str(data)
+
+    response_id = data.get("session_id") or str(uuid.uuid4())
+    return text, response_id
+
+
 # Async langflow function with conversation storage (non-streaming)
 async def async_langflow_chat(
     langflow_client,
@@ -575,22 +618,28 @@ async def async_langflow_chat(
         if filter_id:
             conversation_state["filter_id"] = filter_id
 
-    response_text, response_id, response_obj = await async_response(
-        langflow_client,
-        prompt,
-        flow_id,
-        extra_headers=extra_headers,
-        previous_response_id=previous_response_id,
-        log_prefix="langflow",
-    )
+    from config.settings import clients as _app_clients
+    _lf_http = getattr(_app_clients, "langflow_http_client", None)
+    if _lf_http is not None:
+        response_text, response_id = await _langflow_native_response(
+            _lf_http,
+            flow_id,
+            prompt,
+            extra_headers=extra_headers,
+        )
+        response_obj = None
+    else:
+        response_text, response_id, response_obj = await async_response(
+            langflow_client,
+            prompt,
+            flow_id,
+            extra_headers=extra_headers,
+            previous_response_id=previous_response_id,
+            log_prefix="langflow",
+        )
     logger.debug(
         "Got langflow response",
-        response_preview=response_text[:50],
-        response_id=response_id,
-    )
-    logger.debug(
-        "Got langflow response",
-        response_preview=response_text[:50],
+        response_preview=response_text[:50] if response_text else "",
         response_id=response_id,
     )
 

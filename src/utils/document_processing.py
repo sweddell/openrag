@@ -110,9 +110,12 @@ def extract_relevant(doc_dict: dict) -> dict:
     page_texts = defaultdict(list)
     for txt in doc_dict.get("texts", []):
         prov = txt.get("prov", [])
-        page_no = prov[0].get("page_no") if prov else None
-        if page_no is not None:
-            page_texts[page_no].append(txt.get("text", "").strip())
+        # DOCX and some other formats omit page provenance — fall back to
+        # virtual page 1 so their content is not silently discarded.
+        page_no = prov[0].get("page_no") if prov else 1
+        text = txt.get("text", "").strip()
+        if text:
+            page_texts[page_no].append(text)
 
     for page in sorted(page_texts):
         chunks.append(

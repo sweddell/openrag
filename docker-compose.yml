@@ -111,6 +111,9 @@ services:
       - ${OPENRAG_FLOWS_BACKUP_PATH:-./flows/backup}:/app/flows/backup:U,z
       - ${OPENRAG_CONFIG_PATH:-./config}:/app/config:U,z
       - ${OPENRAG_DATA_PATH:-./data}:/app/data:U,z
+      - ./src:/app/src:U,z
+    ports:
+      - "8100:8000"
     # Linux: Docker Engine does not auto-inject host.docker.internal; map it to the host gateway
     extra_hosts:
       - "host.docker.internal:host-gateway"

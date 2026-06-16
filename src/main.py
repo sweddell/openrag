@@ -248,11 +248,53 @@ async def init_index(opensearch_client=None, admin_username: str = None):
                 Category.OPENSEARCH_INDEX, MessageId.ORB_OS_INDEX_CREATED
             )
         else:
-            logger.info(
-                "Index already exists, skipping creation and changing number of replicas",
-                index_name=index_name,
-                embedding_model=embedding_model,
-            )
+            # Self-healing guard: detect malformed index (missing index.knn or empty mappings)
+            settings = await os_client.indices.get_settings(index=index_name)
+            mappings = await os_client.indices.get_mapping(index=index_name)
+            index_settings = settings.get(index_name, {}).get("settings", {}).get("index", {})
+            index_mappings = mappings.get(index_name, {}).get("mappings", {})
+            knn_enabled = index_settings.get("knn") == "true" or index_settings.get("knn") is True
+            has_properties = bool(index_mappings.get("properties"))
+
+            needs_repair = not knn_enabled or not has_properties
+
+            if needs_repair:
+                stats = await os_client.indices.stats(index=index_name)
+                doc_count = stats.get("indices", {}).get(index_name, {}).get("total", {}).get("docs", {}).get("count", 0)
+
+                if doc_count == 0:
+                    logger.warning(
+                        "Malformed index detected (knn_enabled=%s, has_properties=%s) with 0 docs — recreating",
+                        knn_enabled,
+                        has_properties,
+                        index_name=index_name,
+                    )
+                    await os_client.indices.delete(index=index_name)
+                    await os_client.indices.create(index=index_name, body=index_body)
+                    logger.info(
+                        "Recreated OpenSearch index with correct KNN settings",
+                        index_name=index_name,
+                        embedding_model=embedding_model,
+                    )
+                    await TelemetryClient.send_event(
+                        Category.OPENSEARCH_INDEX, MessageId.ORB_OS_INDEX_CREATED
+                    )
+                else:
+                    logger.error(
+                        "CRITICAL: Malformed index has data and cannot be auto-repaired. "
+                        "Manual reindex required: export data, delete index, recreate, re-import.",
+                        knn_enabled=knn_enabled,
+                        has_properties=has_properties,
+                        doc_count=doc_count,
+                        index_name=index_name,
+                    )
+                    # Continue without raising — other functionality may still work
+            else:
+                logger.info(
+                    "Index already exists with correct settings, skipping creation",
+                    index_name=index_name,
+                    embedding_model=embedding_model,
+                )
             # Set number of replicas to 0 to not create unused nodes in OpenSearch, in case it was created with more replicas
             current = await os_client.indices.get_settings(index=index_name)
             current_replicas = int(

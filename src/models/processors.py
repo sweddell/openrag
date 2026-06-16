@@ -252,9 +252,16 @@ class TaskProcessor:
             )
             slim_doc = process_text_file(file_path)
         else:
-            full_doc = await self.docling_service.convert_file(
-                file_path, user_id=owner_user_id, auth_header=jwt_token
-            )
+            from utils.docling_client import convert_file as docling_convert_file
+            import config.settings as _settings
+            _http_client = getattr(_settings, "clients", None)
+            _http_client = getattr(_http_client, "docling_http_client", None) if _http_client else None
+            if _http_client is None and self.docling_service is not None:
+                full_doc = await self.docling_service.convert_file(
+                    file_path, user_id=owner_user_id, auth_header=jwt_token
+                )
+            else:
+                full_doc = await docling_convert_file(file_path, httpx_client=_http_client)
             slim_doc = extract_relevant(full_doc)
 
         # Override filename with original_filename if provided
