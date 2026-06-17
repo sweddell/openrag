@@ -8,6 +8,7 @@ from agentd.tool_decorator import tool
 from config.settings import clients, get_embedding_model, get_index_name, get_openrag_config
 from config.embedding_constants import OPENAI_DEFAULT_EMBEDDING_MODEL
 from utils.container_utils import transform_localhost_url
+from utils.opensearch_queries import build_field_filter_clause
 from auth_context import get_auth_context
 from utils.logging_config import get_logger
 
@@ -139,17 +140,12 @@ class SearchService:
                         # Map frontend key to backend field name
                         field_name = field_mapping.get(filter_key, filter_key)
 
-                        if len(values) == 0:
-                            # Empty array means "match nothing" - use impossible filter
-                            filter_clauses.append(
-                                {"term": {field_name: "__IMPOSSIBLE_VALUE__"}}
-                            )
-                        elif len(values) == 1:
-                            # Single value filter
-                            filter_clauses.append({"term": {field_name: values[0]}})
-                        else:
-                            # Multiple values filter
-                            filter_clauses.append({"terms": {field_name: values}})
+                        # Wildcard-aware: values like "<orgId>__*" must become
+                        # a wildcard clause, not a literal term (which matches
+                        # nothing and silently drops the whole scope).
+                        clause = build_field_filter_clause(field_name, values)
+                        if clause is not None:
+                            filter_clauses.append(clause)
 
             try:
                 # Build aggregation query with filters applied
@@ -296,17 +292,12 @@ class SearchService:
                         # Map frontend key to backend field name
                         field_name = field_mapping.get(filter_key, filter_key)
 
-                        if len(values) == 0:
-                            # Empty array means "match nothing" - use impossible filter
-                            filter_clauses.append(
-                                {"term": {field_name: "__IMPOSSIBLE_VALUE__"}}
-                            )
-                        elif len(values) == 1:
-                            # Single value filter
-                            filter_clauses.append({"term": {field_name: values[0]}})
-                        else:
-                            # Multiple values filter
-                            filter_clauses.append({"terms": {field_name: values}})
+                        # Wildcard-aware: values like "<orgId>__*" must become
+                        # a wildcard clause, not a literal term (which matches
+                        # nothing and silently drops the whole scope).
+                        clause = build_field_filter_clause(field_name, values)
+                        if clause is not None:
+                            filter_clauses.append(clause)
 
         # Build query body
         if is_wildcard_match_all:

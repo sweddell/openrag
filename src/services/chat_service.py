@@ -2,6 +2,7 @@ import json
 from config.settings import NUDGES_FLOW_ID, clients, LANGFLOW_URL, LANGFLOW_CHAT_FLOW_ID
 from agent import async_chat, async_langflow, async_chat_stream
 from auth_context import set_auth_context
+from utils.opensearch_queries import build_field_filter_clause
 from utils.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -117,12 +118,11 @@ class ChatService:
                     # Map frontend key to backend field name
                     field_name = field_mapping.get(filter_key, filter_key)
 
-                    if len(values) == 1:
-                        # Single value filter
-                        filter_clauses.append({"term": {field_name: values[0]}})
-                    else:
-                        # Multiple values filter
-                        filter_clauses.append({"terms": {field_name: values}})
+                    # Wildcard-aware: values like "<orgId>__*" must become a
+                    # wildcard clause, not a literal term (which matches nothing).
+                    clause = build_field_filter_clause(field_name, values)
+                    if clause is not None:
+                        filter_clauses.append(clause)
 
             if filter_clauses:
                 filter_expression["filter"] = filter_clauses
@@ -233,12 +233,11 @@ class ChatService:
                     # Map frontend key to backend field name
                     field_name = field_mapping.get(filter_key, filter_key)
 
-                    if len(values) == 1:
-                        # Single value filter
-                        filter_clauses.append({"term": {field_name: values[0]}})
-                    else:
-                        # Multiple values filter
-                        filter_clauses.append({"terms": {field_name: values}})
+                    # Wildcard-aware: values like "<orgId>__*" must become a
+                    # wildcard clause, not a literal term (which matches nothing).
+                    clause = build_field_filter_clause(field_name, values)
+                    if clause is not None:
+                        filter_clauses.append(clause)
 
             if filter_clauses:
                 has_user_filters = True
