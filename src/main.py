@@ -47,6 +47,9 @@ from api import (
     upload,
 )
 
+# Entity extraction endpoint
+from api.entity_extract import entity_extract_endpoint
+
 
 from connectors.ibm_cos.api import (
     ibm_cos_defaults,
@@ -1786,6 +1789,14 @@ async def create_app():
     app.add_api_route(
         "/knowledge-filter/{filter_id}/webhook/{subscription_id}",
         knowledge_filter.knowledge_filter_webhook,
+        methods=["POST"],
+        tags=["internal"],
+    )
+
+    # Entity extraction endpoint
+    app.add_api_route(
+        "/api/openrag/entity-extract",
+        entity_extract_endpoint,
         methods=["POST"],
         tags=["internal"],
     )
